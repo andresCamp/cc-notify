@@ -133,8 +133,10 @@ jq -cn \
   --arg project "$PROJECT" \
   --arg event "$EVENT" \
   --arg terminal_kind "$TERMINAL_KIND" \
+  --arg tty "$TTY_PATH" \
+  --arg ghostty_terminal_id "${CC_NOTIFY_GHOSTTY_TERMINAL_ID:-}" \
   --argjson ts "$(date +%s)" \
-  '{session_id:$session_id,title:$title,body:$body,project:$project,event:$event,terminal_kind:$terminal_kind,ts:$ts}' \
+  '{session_id:$session_id,title:$title,body:$body,project:$project,event:$event,terminal_kind:$terminal_kind,tty:$tty,ghostty_terminal_id:$ghostty_terminal_id,ts:$ts}' \
   > "$LOG_FILE"
 
 # --- Send notification ---

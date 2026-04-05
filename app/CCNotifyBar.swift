@@ -9,6 +9,8 @@ struct CCSession {
     let latestTitle: String
     let latestEvent: String
     let terminalKind: String
+    let tty: String
+    let ghosttyTerminalId: String
     let timestamp: Date
     let notificationCount: Int
 }
@@ -142,56 +144,49 @@ class CCNotifyBar: NSObject, NSApplicationDelegate {
 
     @objc func focusSession(_ sender: NSMenuItem) {
         guard let sessionId = sender.representedObject as? String else { return }
+        debugLog("click: \(sessionId)")
 
-        // Read the state file for the terminal ID
+        // Try state file first, fall back to session data from logs
         let stateFile = (stateDir as NSString).appendingPathComponent("\(sessionId).json")
-        guard let data = FileManager.default.contents(atPath: stateFile),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let terminalId = json["ghostty_terminal_id"] as? String,
-              !terminalId.isEmpty
-        else {
-            // Fallback: just activate the terminal app
-            if let app = jsonField(stateFile, key: "app") {
-                let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId(for: app))
-                if let url = url {
-                    NSWorkspace.shared.openApplication(at: url, configuration: .init())
-                }
-            }
+        let terminalId: String
+        let tty: String
+
+        if let data = FileManager.default.contents(atPath: stateFile),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            terminalId = json["ghostty_terminal_id"] as? String ?? ""
+            tty = json["tty"] as? String ?? ""
+        } else if let session = sessions.first(where: { $0.sessionId == sessionId }) {
+            terminalId = session.ghosttyTerminalId
+            tty = session.tty
+        } else {
+            debugLog("no data for \(sessionId)")
             return
         }
+        let sessionForRecapture = sessionId
 
-        // Focus the exact Ghostty terminal via AppleScript
-        let script = """
-        tell application "Ghostty"
-            activate
-            set wList to every window
-            repeat with w in wList
-                try
-                    set tList to every tab of w
-                    repeat with tb in tList
-                        try
-                            set sList to every terminal of tb
-                            repeat with t in sList
-                                try
-                                    if (id of t) is "\(terminalId)" then
-                                        activate window w
-                                        select tab tb
-                                        focus t
-                                        return "ok"
-                                    end if
-                                end try
-                            end repeat
-                        end try
-                    end repeat
-                end try
-            end repeat
-        end tell
-        """
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            // Try the stored terminal ID first
+            if self?.focusGhosttyTerminal(terminalId) == true {
+                self?.debugLog("focused via stored ID")
+                return
+            }
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            let appleScript = NSAppleScript(source: script)
-            var error: NSDictionary?
-            appleScript?.executeAndReturnError(&error)
+            // Stored ID is stale — re-capture via title marker if we have a TTY
+            self?.debugLog("stored ID stale, re-capturing via TTY \(tty)")
+            if !tty.isEmpty,
+               let freshId = self?.recaptureTerminalId(tty: tty, sessionId: sessionForRecapture),
+               self?.focusGhosttyTerminal(freshId) == true {
+                self?.debugLog("focused via re-captured ID \(freshId)")
+                // Update the state file with the fresh ID
+                self?.updateStateFile(sessionId: sessionForRecapture, terminalId: freshId)
+                return
+            }
+
+            // All strategies failed — just activate Ghostty
+            self?.debugLog("all focus strategies failed, activating Ghostty")
+            DispatchQueue.main.async {
+                NSWorkspace.shared.open(URL(string: "file:///Applications/Ghostty.app")!)
+            }
         }
     }
 
@@ -230,6 +225,8 @@ class CCNotifyBar: NSObject, NSApplicationDelegate {
             let project: String
             let event: String
             let terminalKind: String
+            let tty: String
+            let ghosttyTerminalId: String
             let timestamp: Date
             let filename: String
         }
@@ -255,6 +252,8 @@ class CCNotifyBar: NSObject, NSApplicationDelegate {
                     project: project,
                     event: event,
                     terminalKind: json["terminal_kind"] as? String ?? "",
+                    tty: json["tty"] as? String ?? "",
+                    ghosttyTerminalId: json["ghostty_terminal_id"] as? String ?? "",
                     timestamp: Date(timeIntervalSince1970: TimeInterval(ts)),
                     filename: filename
                 )
@@ -279,6 +278,8 @@ class CCNotifyBar: NSObject, NSApplicationDelegate {
                     latestTitle: pair.latest.title,
                     latestEvent: pair.latest.event,
                     terminalKind: pair.latest.terminalKind,
+                    tty: pair.latest.tty,
+                    ghosttyTerminalId: pair.latest.ghosttyTerminalId,
                     timestamp: pair.latest.timestamp,
                     notificationCount: pair.count
                 )
@@ -329,6 +330,96 @@ class CCNotifyBar: NSObject, NSApplicationDelegate {
               let val = json[key] as? String, !val.isEmpty
         else { return nil }
         return val
+    }
+
+    // MARK: - Ghostty Focus
+
+    private func focusGhosttyTerminal(_ terminalId: String) -> Bool {
+        let script = """
+        tell application "Ghostty"
+            activate
+            set wList to every window
+            repeat with w in wList
+                try
+                    set tList to every tab of w
+                    repeat with tb in tList
+                        try
+                            set sList to every terminal of tb
+                            repeat with t in sList
+                                try
+                                    if (id of t) is "\(terminalId)" then
+                                        activate window w
+                                        select tab tb
+                                        focus t
+                                        return "ok"
+                                    end if
+                                end try
+                            end repeat
+                        end try
+                    end repeat
+                end try
+            end repeat
+        end tell
+        return ""
+        """
+        let appleScript = NSAppleScript(source: script)
+        var error: NSDictionary?
+        let result = appleScript?.executeAndReturnError(&error)
+        return result?.stringValue == "ok"
+    }
+
+    /// Set a temporary title marker on the TTY, find the terminal, return its ID
+    private func recaptureTerminalId(tty: String, sessionId: String) -> String? {
+        let marker = "cc-notify:\(sessionId)"
+
+        // Set the marker title on the TTY
+        let setTitle = Process()
+        setTitle.executableURL = URL(fileURLWithPath: "/bin/bash")
+        setTitle.arguments = ["-c", "printf '\\033]2;\(marker)\\007' > \(tty) 2>/dev/null"]
+        try? setTitle.run()
+        setTitle.waitUntilExit()
+
+        Thread.sleep(forTimeInterval: 0.2)
+
+        // Query Ghostty for the terminal with that title
+        let script = """
+        tell application "Ghostty"
+            repeat with t in terminals
+                if (name of t) is "\(marker)" then return id of t
+            end repeat
+        end tell
+        return ""
+        """
+        let appleScript = NSAppleScript(source: script)
+        var error: NSDictionary?
+        let result = appleScript?.executeAndReturnError(&error)
+        let id = result?.stringValue ?? ""
+        return id.isEmpty ? nil : id
+    }
+
+    private func updateStateFile(sessionId: String, terminalId: String) {
+        let path = (stateDir as NSString).appendingPathComponent("\(sessionId).json")
+        guard let data = FileManager.default.contents(atPath: path),
+              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return }
+        json["ghostty_terminal_id"] = terminalId
+        if let updated = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted) {
+            try? updated.write(to: URL(fileURLWithPath: path))
+        }
+    }
+
+    private func debugLog(_ msg: String) {
+        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".cc-notify/debug.log")
+        let line = "[\(DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium))] \(msg)\n"
+        if let data = line.data(using: .utf8) {
+            if let fh = FileHandle(forWritingAtPath: path) {
+                fh.seekToEndOfFile()
+                fh.write(data)
+                fh.closeFile()
+            } else {
+                FileManager.default.createFile(atPath: path, contents: data)
+            }
+        }
     }
 
     private func bundleId(for appName: String) -> String {
