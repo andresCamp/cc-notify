@@ -1,17 +1,21 @@
 {
   "version": "1.0",
   "type": "product",
-  "product": "cc-notify",
+  "product": "overstory",
   "productVersion": "v1",
-  "activePhase": null,
-  "lastTwinUpdate": null,
+  "activePhase": "phase-1-session-switcher",
+  "lastTwinUpdate": "2026-04-04",
   "lastDriftScan": null,
   "files": {
     "twin": "osis/twin.md",
     "v1": {
       "vision": "osis/v1/vision.md",
       "product-spec": "osis/v1/product-spec.md",
-      "changelog": "osis/v1/changelog.md"
+      "changelog": "osis/v1/changelog.md",
+      "phase-1-session-switcher": {
+        "game-plan": "osis/v1/phase-1-session-switcher/game-plan.md",
+        "session-switcher--implementation-spec": "osis/v1/phase-1-session-switcher/session-switcher--implementation-spec.md"
+      }
     }
   }
 }

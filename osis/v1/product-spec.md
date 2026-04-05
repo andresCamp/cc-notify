@@ -2,7 +2,7 @@
 
 ## Overview
 
-v1 delivers a macOS menubar app with a global-hotkey-activated floating panel that shows all running Claude Code sessions, their status, and lets the developer focus any session with keyboard or mouse. Ghostty is the supported terminal. Claude Code is the supported agent.
+Overstory v1 delivers a macOS app with a global-hotkey-activated floating panel as the primary interface. The panel shows all running Claude Code sessions, their status, and lets the developer focus any session with keyboard or mouse. Ghostty is the supported terminal. Claude Code is the supported agent. The menubar provides secondary, ambient status.
 
 ## User Stories
 
@@ -18,19 +18,21 @@ v1 delivers a macOS menubar app with a global-hotkey-activated floating panel th
 
 5. As a developer, I want the panel to disappear after I select a session, so it does not obstruct my workflow.
 
+6. As a developer, I want each session card to have a unique visual identity (gradient derived from the title) so I can quickly distinguish between projects at a glance.
+
+7. As a developer, I want to use arrow keys and Enter to navigate the panel, so I never need to reach for the mouse.
+
 **P1 -- Should have:**
 
-6. As a developer, I want each session to have a distinct visual identity so I can quickly distinguish between projects.
+8. As a developer, I want hovering or highlighting a card to preview that window (bring it forward briefly), so I can confirm it is the right one before committing.
 
-7. As a developer, I want the app to start on login and run silently in the background, so I never have to think about launching it.
+9. As a developer, I want the app to start on login and run silently in the background, so I never have to think about launching it.
 
-8. As a developer, I want to see the session's project directory and the agent's current title, so I have enough context to pick the right session.
+10. As a developer, I want to see the session's CC title and working directory on each card, so I have enough context to pick the right session.
 
 **P2 -- Nice to have:**
 
-9. As a developer, I want to use arrow keys and Enter to navigate the panel, so I never need to reach for the mouse.
-
-10. As a developer, I want hovering/highlighting a card to preview that window (bring it forward briefly), so I can confirm it is the right one before committing.
+11. As a developer, I want the menubar to show a badge and session count as ambient awareness when I am not using the panel.
 
 ## Systems
 
@@ -38,19 +40,20 @@ v1 delivers a macOS menubar app with a global-hotkey-activated floating panel th
 
 Two complementary mechanisms detect active Claude Code sessions:
 
-**Hooks (primary, rich data):**
-- Claude Code fires `Stop` and `Notification` hook events with JSON on stdin.
-- The hook handler (`cc-notify.sh`) parses the event, captures terminal context, and writes state + log files.
-- Provides: session ID, project directory, event type, notification type, message, terminal kind, TTY, Ghostty terminal ID.
-
-**Polling (baseline, no hooks required):**
+**Polling (baseline, always-on):**
 - `pgrep` to find running `claude` processes.
 - Walk the process tree to associate each process with a TTY.
-- Query the terminal (AppleScript for Ghostty) to get window/tab context.
-- Provides: session existence, TTY, terminal window association.
-- Polling ensures the app works even if hooks are not configured, showing sessions without rich status data.
+- Query Ghostty via AppleScript to get window/tab context and terminal names.
+- Provides: session existence, TTY, terminal window association, CC title (from Ghostty terminal name), working directory.
+- Polling ensures the app always finds sessions without any developer configuration.
 
-v1 ships hooks as the primary mechanism. Polling is a future hardening step to ensure sessions are never missed.
+**Hooks (enrichment, richer status):**
+- Claude Code fires `Stop` and `Notification` hook events with JSON on stdin.
+- The hook handler (`cc-notify.sh`) parses the event, captures terminal context, and writes state + log files.
+- Provides: session ID, event type, notification type, message, terminal kind, TTY, Ghostty terminal ID.
+- Hooks layer richer status data on top of what polling discovers.
+
+v1 ships polling as the baseline detection mechanism. Hooks enrich sessions with detailed status when configured.
 
 ### Floating Panel (Session Switcher)
 
@@ -70,6 +73,7 @@ The primary interface. A borderless, floating window that appears on a global ho
 - Enter to confirm selection: dismiss panel, focus the selected session's terminal.
 - Escape to dismiss without action.
 - Mouse click on a card to select.
+- Hovering or highlighting a card previews the window by focusing it temporarily.
 
 **Behavior:**
 - Panel appears above all windows (floating window level).
@@ -81,21 +85,20 @@ The primary interface. A borderless, floating window that appears on a global ho
 Each card in the floating panel represents one Claude Code session.
 
 **Content:**
-- Project name (derived from the working directory basename).
-- Agent title / latest status message from Claude Code.
+- CC title (from the Ghostty terminal name -- this is what Claude Code sets as its working title).
 - Working directory path (truncated, shown secondary).
 - Status indicator with clear visual hierarchy:
-  - **Needs approval:** urgent styling -- red/pulsing accent. Top-sorted.
-  - **Turn complete:** green accent. Developer action likely.
-  - **Working:** neutral, subtle animation (spinner or pulse). No action needed.
+  - **Needs approval:** urgent styling -- red/pulsing accent. Top-sorted. The session is blocked on the developer.
+  - **Turn complete:** green accent. Claude finished; developer action likely.
+  - **Working:** neutral, subtle animation (spinner or pulse). Claude is actively running.
   - **Idle:** dimmed. No recent activity.
 
 **Visual identity:**
-- Each card has a unique gradient/color derived deterministically from the project name (similar to GitHub's default avatar generation).
-- The gradient serves as a quick visual anchor -- developers learn to associate the color with the project.
+- Each card has a unique gradient/blur derived deterministically from the CC title.
+- The gradient serves as a quick visual anchor -- developers learn to associate the color pattern with the session.
 
 **Sorting:**
-- Sessions needing attention sort to the top (approval > complete > working > idle).
+- Sessions needing attention sort to the top: needs approval > turn complete > working > idle.
 - Within the same status tier, sort by most recent event.
 
 ### Focus Engine
@@ -128,11 +131,11 @@ Push notifications alert the developer to high-priority events when they are not
 - Other terminals: `osascript display notification` (macOS native).
 
 **Future:**
-- Clicking a notification focuses the correct session (currently requires terminal-notifier for click callbacks; v1 relies on menubar/panel for focus).
+- Clicking a notification focuses the correct session (currently requires terminal-notifier for click callbacks; v1 relies on the panel for focus).
 
 ### Menubar
 
-The ambient status indicator. Secondary to the floating panel.
+Secondary, ambient status indicator. Not the primary interface.
 
 **Icon:**
 - System bell icon (SF Symbols). Badged when sessions with notifications exist.
@@ -152,8 +155,7 @@ The ambient status indicator. Secondary to the floating panel.
 
 v1 does NOT:
 - Support any terminal other than Ghostty for full focus functionality. Other terminals are detected but focus falls back to app activation.
-- Support any CLI agent other than Claude Code. The architecture accommodates others, but v1 only handles Claude Code hooks.
-- Include polling-based session detection. v1 relies entirely on hooks for session awareness.
+- Support any CLI agent other than Claude Code. The architecture accommodates others, but v1 only handles Claude Code.
 - Provide a settings UI. Configuration (hotkey, notification preferences) is future scope.
 - Support Linux or Windows. macOS only.
 - Replace the terminal. It is a switcher and notifier, not a multiplexer or terminal emulator.
@@ -163,19 +165,20 @@ v1 does NOT:
 
 ### v1: Ghostty + Claude Code
 
-- Menubar app with session list and focus.
-- Floating panel with global hotkey (session switcher).
-- Session cards with status, project, visual identity.
-- Keyboard navigation (arrows + Enter).
+- Floating panel with global hotkey as the primary interface (session switcher).
+- Polling-based session detection (pgrep + Ghostty AppleScript) as baseline.
+- Session cards with CC title, directory, status, and unique visual identity (gradient from title).
+- Status hierarchy: needs approval > turn complete > working > idle.
+- Keyboard navigation (arrows + Enter), hover/highlight previews.
 - Ghostty-specific focus via AppleScript.
+- Claude Code hooks for enriched status data.
 - Push notifications via OSC 9 and osascript.
-- Claude Code hooks for rich status data.
+- Menubar with ambient session count and badge.
 - LaunchAgent for auto-start.
 - Install/uninstall scripts.
 
 ### v2: Terminal-agnostic
 
-- Polling-based session detection as a baseline (pgrep + process tree).
 - iTerm2 adapter (AppleScript focus, session ID matching).
 - WezTerm adapter (CLI-based focus).
 - kitty adapter (remote control protocol).
@@ -186,5 +189,4 @@ v1 does NOT:
 
 - Support for Codex, Cursor agent, and other CLI agents.
 - Agent-specific status parsing (each agent exposes status differently).
-- Product rename to reflect the broader "session switcher for CLI agents" identity.
 - Potential for cross-platform (Linux).

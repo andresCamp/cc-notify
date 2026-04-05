@@ -1,6 +1,8 @@
-# Digital Twin
+# Digital Twin -- Overstory (cc-notify)
 
 Last updated: 2026-04-04
+
+The product is Overstory. The codebase uses the original working name `cc-notify` throughout -- file names, paths, scripts, and data directories all reference `cc-notify`. This twin documents what exists in code today.
 
 ---
 
