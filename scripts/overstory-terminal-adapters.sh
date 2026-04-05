@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-cc_notify_detect_terminal_kind() {
+overstory_detect_terminal_kind() {
   case "${TERM_PROGRAM:-}" in
     ghostty|Ghostty)         echo "ghostty" ;;
     iTerm.app|iTerm2)        echo "iterm2" ;;
@@ -17,7 +17,7 @@ cc_notify_detect_terminal_kind() {
   esac
 }
 
-cc_notify_app_name_for_kind() {
+overstory_app_name_for_kind() {
   case "$1" in
     ghostty)          echo "Ghostty" ;;
     iterm2)           echo "iTerm2" ;;
@@ -33,21 +33,21 @@ cc_notify_app_name_for_kind() {
 # For Ghostty: briefly set a unique title marker, query AppleScript to
 # find which terminal has that title, capture its stable ID. The marker
 # is set while CC is blocked waiting for this hook, so there is no race.
-cc_notify_capture_context() {
+overstory_capture_context() {
   local terminal_kind="$1"
   local cwd="$2"
   local tty="$3"
   local project="$4"
   local session_id="$5"
 
-  CC_NOTIFY_FOCUS_CAPABILITY="fallback"
-  CC_NOTIFY_GHOSTTY_TERMINAL_ID=""
+  OVERSTORY_FOCUS_CAPABILITY="fallback"
+  OVERSTORY_GHOSTTY_TERMINAL_ID=""
 
   case "$terminal_kind" in
     ghostty)
-      CC_NOTIFY_GHOSTTY_TERMINAL_ID=$(cc_notify_capture_ghostty_id_via_marker "$tty" "$session_id")
-      if [ -n "$CC_NOTIFY_GHOSTTY_TERMINAL_ID" ]; then
-        CC_NOTIFY_FOCUS_CAPABILITY="ghostty_terminal_id"
+      OVERSTORY_GHOSTTY_TERMINAL_ID=$(overstory_capture_ghostty_id_via_marker "$tty" "$session_id")
+      if [ -n "$OVERSTORY_GHOSTTY_TERMINAL_ID" ]; then
+        OVERSTORY_FOCUS_CAPABILITY="ghostty_terminal_id"
       fi
       ;;
   esac
@@ -55,12 +55,12 @@ cc_notify_capture_context() {
 
 # Set a temporary title marker on the TTY, query Ghostty for the terminal
 # with that exact title, capture its stable ID.
-cc_notify_capture_ghostty_id_via_marker() {
+overstory_capture_ghostty_id_via_marker() {
   local tty="$1"
   local session_id="$2"
   [ -n "$tty" ] && [ -w "$tty" ] || return 0
 
-  local marker="cc-notify:${session_id}"
+  local marker="overstory:${session_id}"
 
   # Set the marker title directly on the TTY device
   printf '\033]2;%s\007' "$marker" > "$tty" 2>/dev/null || return 0
@@ -81,7 +81,7 @@ APPLESCRIPT
 }
 
 # Send a native Ghostty desktop notification via OSC 9.
-cc_notify_send_ghostty_notification() {
+overstory_send_ghostty_notification() {
   local tty="$1"
   local message="$2"
   [ -n "$tty" ] && [ -w "$tty" ] || return 1
@@ -90,31 +90,31 @@ cc_notify_send_ghostty_notification() {
 
 # Focus the correct terminal. Uses the captured Ghostty terminal ID
 # to activate the window, select the tab, and focus the terminal.
-cc_notify_focus_context() {
+overstory_focus_context() {
   local state_file="$1"
   local session_id="$2"
   local terminal_kind app tty ghostty_terminal_id
 
-  terminal_kind=$(cc_notify_json_field "$state_file" '.terminal_kind // "unknown"')
-  app=$(cc_notify_json_field "$state_file" '.app // ""')
-  tty=$(cc_notify_json_field "$state_file" '.tty // ""')
-  ghostty_terminal_id=$(cc_notify_json_field "$state_file" '.ghostty_terminal_id // ""')
+  terminal_kind=$(overstory_json_field "$state_file" '.terminal_kind // "unknown"')
+  app=$(overstory_json_field "$state_file" '.app // ""')
+  tty=$(overstory_json_field "$state_file" '.tty // ""')
+  ghostty_terminal_id=$(overstory_json_field "$state_file" '.ghostty_terminal_id // ""')
 
   case "$terminal_kind" in
     ghostty)
-      if cc_notify_focus_ghostty_terminal "$ghostty_terminal_id"; then
+      if overstory_focus_ghostty_terminal "$ghostty_terminal_id"; then
         return 0
       fi
       ;;
   esac
 
-  cc_notify_focus_fallback "$app" "$tty"
+  overstory_focus_fallback "$app" "$tty"
 }
 
 # Focus a Ghostty terminal by its stable ID.
 # Walks windows > tabs > terminals to find the containing tab,
 # activates the window, selects the tab, and focuses the terminal.
-cc_notify_focus_ghostty_terminal() {
+overstory_focus_ghostty_terminal() {
   local terminal_id="$1"
   [ -n "$terminal_id" ] || return 1
 
@@ -142,7 +142,7 @@ APPLESCRIPT
   )" = "ok" ]
 }
 
-cc_notify_focus_fallback() {
+overstory_focus_fallback() {
   local app="$1"
   local tty="$2"
 
@@ -157,7 +157,7 @@ cc_notify_focus_fallback() {
   return 0
 }
 
-cc_notify_json_field() {
+overstory_json_field() {
   local state_file="$1"
   local jq_expr="$2"
   jq -r "$jq_expr" "$state_file" 2>/dev/null || echo ""

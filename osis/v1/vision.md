@@ -6,11 +6,11 @@ Every developer running parallel AI agent sessions knows exactly which one needs
 
 ## Problem
 
-Developers running 10-20+ Claude Code sessions in parallel across terminal tabs lose significant time because they have no way to know which session needs them. The bottleneck is not the AI thinking -- it is the human noticing. Every minute a session waits for approval or input is a minute of wasted compute and developer flow.
+Developers running 10-20+ Claude Code sessions in parallel across terminal tabs lose significant time because they have no way to know which session needs them. The bottleneck is not the AI thinking -- it is the human noticing. Every minute a session waits for approval, input, or follow-up after a completed turn is a minute of wasted compute and developer flow.
 
 ## Insight
 
-The terminal is invisible by design. Terminals do not surface state from background tabs. But CLI agents have a clear, finite set of states (working, done, needs input) and the operating system already has the primitives to observe and surface them. The missing piece is not monitoring infrastructure -- it is a fast, keyboard-native switcher that treats agent sessions as first-class objects.
+The terminal is invisible by design. Terminals do not surface state from background tabs. But CLI agents emit clear attention signals, and the operating system already has the primitives to surface them. The missing piece is not more terminal chrome -- it is a fast, keyboard-native switcher that treats agent sessions as first-class objects.
 
 ## Name
 
@@ -18,9 +18,9 @@ Overstory. The overstory is the highest layer of the forest canopy -- the layer 
 
 ## Solution
 
-A lightweight macOS app with a floating panel as the primary interface. A global hotkey opens and closes the panel -- like Cmd+Tab, but for agent sessions. The panel shows session cards, each with the CC title (from the Ghostty terminal name), directory, status, and a unique visual identity (a gradient derived from the title). Arrow keys and Enter to navigate. Hovering a card previews the window by focusing it. Selecting a card dismisses the panel and focuses the correct terminal.
+A lightweight macOS app with a floating panel as the primary interface. A global hotkey opens and closes the panel -- like Cmd+Tab, but for agent sessions. The panel shows recent hook-visible session cards, each with the project name, directory, latest attention title, status, and a unique visual identity (a gradient derived from the project). Arrow keys and Enter navigate the grid. Selecting a card dismisses the panel and focuses the correct terminal.
 
-Session detection uses polling as the baseline (pgrep to find claude processes, Ghostty AppleScript to get window/tab context). Hooks provide richer status data on top of that baseline.
+Session detection in v1 uses Claude Code hooks as the baseline. Runtime discovery for all running sessions is future work.
 
 ## Principles
 
@@ -28,7 +28,7 @@ Session detection uses polling as the baseline (pgrep to find claude processes, 
 
 2. **Keyboard-native.** The primary interaction is hotkey, arrow keys, Enter. Mouse is supported but secondary. The interaction model is Cmd+Tab, not a dashboard.
 
-3. **Zero configuration.** It works out of the box. Polling detects sessions automatically. Hooks make status richer, but the app is useful without them. No config files to edit, no agents to install per-project.
+3. **Low setup overhead.** One install configures the Claude Code hooks globally. No per-project setup, no config files per repo, no manual tab bookkeeping.
 
 4. **The floating panel is primary.** The panel is the interface. The menubar is secondary and ambient -- a badge and session count, not the main interaction path.
 

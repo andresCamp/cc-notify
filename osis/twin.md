@@ -1,8 +1,8 @@
-# Digital Twin -- Overstory (cc-notify)
+# Digital Twin -- Overstory
 
 Last updated: 2026-04-04
 
-The product is Overstory. The codebase uses the original working name `cc-notify` throughout -- file names, paths, scripts, and data directories all reference `cc-notify`. This twin documents what exists in code today.
+The product is Overstory. This twin documents what exists in code today.
 
 ---
 
@@ -14,7 +14,7 @@ The product is Overstory. The codebase uses the original working name `cc-notify
                                |
                                v
                       +------------------+
-                      |  cc-notify.sh    |
+                      |  overstory.sh    |
                       |  Hook Handler    |
                       +--------+---------+
                                |
@@ -22,12 +22,12 @@ The product is Overstory. The codebase uses the original working name `cc-notify
               |                |                |
               v                v                v
      Terminal Adapters    Log Entry         State File
-     (cc-terminal-       (~/.cc-notify/    (~/.cc-notify/
+     (overstory-terminal-       (~/.overstory/    (~/.overstory/
       adapters.sh)        log/*.json)       state/*.json)
               |                |
               |                v
               |       +------------------+
-              |       |  CCNotifyBar     |
+              |       |  OverstoryBar     |
               |       |  (Menubar App)   |
               |       +--------+---------+
               |                |
@@ -41,16 +41,16 @@ The product is Overstory. The codebase uses the original working name `cc-notify
 ### Loop 1: Hook-to-Notification
 
 1. Claude Code fires a hook event (Stop or Notification) with JSON on stdin
-2. `cc-notify.sh` parses the event, determines notification title/body/sound
+2. `overstory.sh` parses the event, determines notification title/body/sound
 3. Terminal adapter detects the terminal kind (Ghostty, iTerm2, etc.) via `$TERM_PROGRAM`
 4. For Ghostty: captures the terminal's stable ID by setting a title marker via OSC escape, then querying AppleScript
-5. Writes a state file (`~/.cc-notify/state/{session_id}.json`) with full terminal context
-6. Writes a log entry (`~/.cc-notify/log/{ts}-{session_id}.json`) for the menubar app
+5. Writes a state file (`~/.overstory/state/{session_id}.json`) with full terminal context
+6. Writes a log entry (`~/.overstory/log/{ts}-{session_id}.json`) for the menubar app
 7. Sends a push notification: OSC 9 for Ghostty, `osascript display notification` for others
 
 ### Loop 2: Menubar Awareness
 
-1. CCNotifyBar watches `~/.cc-notify/log/` for filesystem changes (DispatchSource)
+1. OverstoryBar watches `~/.overstory/log/` for filesystem changes (DispatchSource)
 2. On change, debounces 300ms, then reloads all log JSON files
 3. Deduplicates by session ID, keeping the latest event per session
 4. Prunes entries older than 1 hour
@@ -60,14 +60,14 @@ The product is Overstory. The codebase uses the original working name `cc-notify
 ### Loop 3: Click-to-Focus
 
 1. Developer clicks a session in the menubar dropdown
-2. CCNotifyBar reads the state file for that session's Ghostty terminal ID and TTY
+2. OverstoryBar reads the state file for that session's Ghostty terminal ID and TTY
 3. Attempts to focus via AppleScript: walks Ghostty windows > tabs > terminals to find the ID
 4. If the stored ID is stale, re-captures by setting a title marker on the TTY and querying again
 5. If all strategies fail, falls back to activating Ghostty.app
 
 ## Systems
 
-### Hook Handler (`cc-notify.sh`)
+### Hook Handler (`overstory.sh`)
 
 **What it does:** Receives Claude Code hook events on stdin, extracts session context, persists state, and dispatches notifications.
 
@@ -80,7 +80,7 @@ The product is Overstory. The codebase uses the original working name `cc-notify
 - Writes both state files (for focus) and log files (for menubar)
 - Distinct notification sounds per event type (Funk, Glass, default)
 
-### Terminal Adapters (`cc-terminal-adapters.sh`)
+### Terminal Adapters (`overstory-terminal-adapters.sh`)
 
 **What it does:** Abstracts terminal detection, context capture, focus, and notification delivery across terminal emulators.
 
@@ -95,7 +95,7 @@ The product is Overstory. The codebase uses the original working name `cc-notify
 - Fallback focus: activates the app and sends a bell character to the TTY
 - State files store terminal-specific IDs (Ghostty terminal ID, iTerm session ID, WezTerm pane, kitty window ID) but only Ghostty IDs are actively captured and used
 
-### Menubar App (`CCNotifyBar.swift`)
+### Menubar App (`OverstoryBar.swift`)
 
 **What it does:** A native macOS menubar app that shows active Claude Code sessions and lets the developer focus any session with one click.
 
@@ -108,7 +108,7 @@ The product is Overstory. The codebase uses the original working name `cc-notify
 - Status icons: yellow circle (notification/needs attention), green circle (done), white circle (other)
 - Click a session to focus its Ghostty terminal (same AppleScript focus logic as the shell scripts)
 - Stale terminal ID recovery: re-captures via TTY title marker if the stored ID fails
-- Filesystem watcher on `~/.cc-notify/log/` with 300ms debounce
+- Filesystem watcher on `~/.overstory/log/` with 300ms debounce
 - Auto-prunes log entries older than 1 hour
 - Clear All (Cmd+K) to reset
 - LaunchAgent for auto-start on login
@@ -124,7 +124,7 @@ The product is Overstory. The codebase uses the original working name `cc-notify
 - Ghostty: title-marker-based ID recovery when stored IDs go stale
 - Fallback: `open -a {app}` + bell character on TTY
 - State file stores IDs for iTerm2, WezTerm, kitty but focus logic is only implemented for Ghostty
-- Implemented in both shell (cc-terminal-adapters.sh) and Swift (CCNotifyBar.swift) -- duplicated
+- Implemented in both shell (overstory-terminal-adapters.sh) and Swift (OverstoryBar.swift) -- duplicated
 
 ## Actors
 
@@ -139,7 +139,7 @@ The product is Overstory. The codebase uses the original working name `cc-notify
 
 ```
 +------------------+     hook events (stdin JSON)     +------------------+
-|   Claude Code    | -------------------------------->|  cc-notify.sh    |
+|   Claude Code    | -------------------------------->|  overstory.sh    |
 |   (CLI Agent)    |                                  |  (Hook Handler)  |
 +------------------+                                  +--------+---------+
                                                                |
@@ -149,7 +149,7 @@ The product is Overstory. The codebase uses the original working name `cc-notify
                                                     |                     |
                                                     v                     v
                                             +-------+-------+    +-------+-------+
-                                            | cc-focus.sh   |    | CCNotifyBar   |
+                                            | overstory-focus.sh   |    | OverstoryBar   |
                                             | (CLI Focus)   |    | (Menubar App) |
                                             +-------+-------+    +-------+-------+
                                                     |                     |
@@ -172,11 +172,11 @@ The product is Overstory. The codebase uses the original working name `cc-notify
 
 | File | Purpose |
 |---|---|
-| `scripts/cc-notify.sh` | Hook handler. Entry point from Claude Code hooks. |
-| `scripts/cc-focus.sh` | CLI focus script. Called with a session ID to focus that terminal. |
-| `scripts/cc-terminal-adapters.sh` | Terminal detection, context capture, focus, and notification abstractions. |
-| `app/CCNotifyBar.swift` | Native macOS menubar app. Single-file Swift binary. |
+| `scripts/overstory.sh` | Hook handler. Entry point from Claude Code hooks. |
+| `scripts/overstory-focus.sh` | CLI focus script. Called with a session ID to focus that terminal. |
+| `scripts/overstory-terminal-adapters.sh` | Terminal detection, context capture, focus, and notification abstractions. |
+| `app/OverstoryBar.swift` | Native macOS menubar app. Single-file Swift binary. |
 | `install.sh` | Installer. Copies scripts, compiles Swift app, configures CC hooks, sets up LaunchAgent. |
 | `uninstall.sh` | Uninstaller. Removes hooks, LaunchAgent, and installed files. |
-| `~/.cc-notify/log/*.json` | Log entries consumed by the menubar app. Ephemeral (pruned after 1 hour). |
-| `~/.cc-notify/state/*.json` | Session state files with terminal context for focus. |
+| `~/.overstory/log/*.json` | Log entries consumed by the menubar app. Ephemeral (pruned after 1 hour). |
+| `~/.overstory/state/*.json` | Session state files with terminal context for focus. |

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# cc-notify: Claude Code hook handler
+# overstory: Claude Code hook handler
 # Sends macOS notifications on turn complete / approval needed.
 # Reads hook JSON from stdin, detects terminal, sends notification.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/cc-terminal-adapters.sh"
+source "$SCRIPT_DIR/overstory-terminal-adapters.sh"
 
-STATE_DIR="$HOME/.cc-notify/state"
+STATE_DIR="$HOME/.overstory/state"
 mkdir -p "$STATE_DIR"
 
 shell_quote() {
@@ -60,8 +60,8 @@ case "$EVENT" in
 esac
 
 # --- Detect terminal app ---
-TERMINAL_KIND=$(cc_notify_detect_terminal_kind)
-APP_NAME=$(cc_notify_app_name_for_kind "$TERMINAL_KIND")
+TERMINAL_KIND=$(overstory_detect_terminal_kind)
+APP_NAME=$(overstory_app_name_for_kind "$TERMINAL_KIND")
 
 # --- Find the TTY for this terminal session ---
 # The hook's own stdin is a pipe (JSON), so we walk up the process tree
@@ -84,7 +84,7 @@ find_session_tty() {
 }
 
 TTY_PATH=$(find_session_tty)
-cc_notify_capture_context "$TERMINAL_KIND" "$CWD" "$TTY_PATH" "$PROJECT" "$SESSION_ID"
+overstory_capture_context "$TERMINAL_KIND" "$CWD" "$TTY_PATH" "$PROJECT" "$SESSION_ID"
 
 # --- Save session state for the focus script ---
 jq -cn \
@@ -94,14 +94,14 @@ jq -cn \
   --arg cwd "$CWD" \
   --arg project "$PROJECT" \
   --arg event "$EVENT" \
-  --arg focus_capability "${CC_NOTIFY_FOCUS_CAPABILITY:-fallback}" \
+  --arg focus_capability "${OVERSTORY_FOCUS_CAPABILITY:-fallback}" \
   --arg term_program "${TERM_PROGRAM:-}" \
   --arg term "${TERM:-}" \
   --arg term_program_version "${TERM_PROGRAM_VERSION:-}" \
   --arg iterm_session_id "${ITERM_SESSION_ID:-}" \
   --arg wezterm_pane_id "${WEZTERM_PANE:-}" \
   --arg kitty_window_id "${KITTY_WINDOW_ID:-}" \
-  --arg ghostty_terminal_id "${CC_NOTIFY_GHOSTTY_TERMINAL_ID:-}" \
+  --arg ghostty_terminal_id "${OVERSTORY_GHOSTTY_TERMINAL_ID:-}" \
   --argjson ts "$(date +%s)" \
   '{
     app: $app,
@@ -123,7 +123,7 @@ jq -cn \
   > "$STATE_DIR/$SESSION_ID.json"
 
 # --- Write log entry for menubar app ---
-LOG_DIR="$HOME/.cc-notify/log"
+LOG_DIR="$HOME/.overstory/log"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/$(date +%s)-${SESSION_ID}.json"
 jq -cn \
@@ -134,7 +134,7 @@ jq -cn \
   --arg event "$EVENT" \
   --arg terminal_kind "$TERMINAL_KIND" \
   --arg tty "$TTY_PATH" \
-  --arg ghostty_terminal_id "${CC_NOTIFY_GHOSTTY_TERMINAL_ID:-}" \
+  --arg ghostty_terminal_id "${OVERSTORY_GHOSTTY_TERMINAL_ID:-}" \
   --argjson ts "$(date +%s)" \
   '{session_id:$session_id,title:$title,body:$body,project:$project,event:$event,terminal_kind:$terminal_kind,tty:$tty,ghostty_terminal_id:$ghostty_terminal_id,ts:$ts}' \
   > "$LOG_FILE"
@@ -143,7 +143,7 @@ jq -cn \
 # For Ghostty: use OSC 9 (native desktop notification via the terminal).
 # For other terminals: use osascript display notification.
 if [ "$TERMINAL_KIND" = "ghostty" ] && [ -n "$TTY_PATH" ] && [ -w "$TTY_PATH" ]; then
-  cc_notify_send_ghostty_notification "$TTY_PATH" "$TITLE: $BODY" &
+  overstory_send_ghostty_notification "$TTY_PATH" "$TITLE: $BODY" &
 else
   osascript - "$TITLE" "$BODY" "$PROJECT" "$SOUND" <<'APPLESCRIPT' &
 on run argv

@@ -3,7 +3,7 @@ import Foundation
 
 // MARK: - Models
 
-struct CCSession {
+struct OverstorySession {
     let sessionId: String
     let project: String
     let latestTitle: String
@@ -17,19 +17,19 @@ struct CCSession {
 
 // MARK: - App Delegate
 
-class CCNotifyBar: NSObject, NSApplicationDelegate {
+class OverstoryBar: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let logDir: String
     private let stateDir: String
-    private var sessions: [CCSession] = []
+    private var sessions: [OverstorySession] = []
     private var fileDescriptor: Int32 = -1
     private var dirSource: DispatchSourceFileSystemObject?
     private var debounceWork: DispatchWorkItem?
 
     override init() {
         let home = NSHomeDirectory()
-        logDir = (home as NSString).appendingPathComponent(".cc-notify/log")
-        stateDir = (home as NSString).appendingPathComponent(".cc-notify/state")
+        logDir = (home as NSString).appendingPathComponent(".overstory/log")
+        stateDir = (home as NSString).appendingPathComponent(".overstory/state")
         super.init()
     }
 
@@ -49,7 +49,7 @@ class CCNotifyBar: NSObject, NSApplicationDelegate {
     private func updateIcon(count: Int) {
         guard let button = statusItem.button else { return }
         let name = count > 0 ? "bell.badge.fill" : "bell"
-        if let img = NSImage(systemSymbolName: name, accessibilityDescription: "CC Notify") {
+        if let img = NSImage(systemSymbolName: name, accessibilityDescription: "Overstory") {
             img.isTemplate = true
             button.image = img
         }
@@ -132,7 +132,7 @@ class CCNotifyBar: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let quit = NSMenuItem(title: "Quit CC Notify", action: #selector(quitApp), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit Overstory", action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
         quit.keyEquivalentModifierMask = [.command]
         menu.addItem(quit)
@@ -272,7 +272,7 @@ class CCNotifyBar: NSObject, NSApplicationDelegate {
 
         sessions = sessionMap.values
             .map { pair in
-                CCSession(
+                OverstorySession(
                     sessionId: pair.latest.sessionId,
                     project: pair.latest.project,
                     latestTitle: pair.latest.title,
@@ -370,7 +370,7 @@ class CCNotifyBar: NSObject, NSApplicationDelegate {
 
     /// Set a temporary title marker on the TTY, find the terminal, return its ID
     private func recaptureTerminalId(tty: String, sessionId: String) -> String? {
-        let marker = "cc-notify:\(sessionId)"
+        let marker = "overstory:\(sessionId)"
 
         // Set the marker title on the TTY
         let setTitle = Process()
@@ -409,7 +409,7 @@ class CCNotifyBar: NSObject, NSApplicationDelegate {
     }
 
     private func debugLog(_ msg: String) {
-        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".cc-notify/debug.log")
+        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".overstory/debug.log")
         let line = "[\(DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium))] \(msg)\n"
         if let data = line.data(using: .utf8) {
             if let fh = FileHandle(forWritingAtPath: path) {
@@ -439,6 +439,6 @@ class CCNotifyBar: NSObject, NSApplicationDelegate {
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
-let delegate = CCNotifyBar()
+let delegate = OverstoryBar()
 app.delegate = delegate
 app.run()
