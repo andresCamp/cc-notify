@@ -84,7 +84,7 @@ find_session_tty() {
 }
 
 TTY_PATH=$(find_session_tty)
-cc_notify_capture_context "$TERMINAL_KIND" "$CWD"
+cc_notify_capture_context "$TERMINAL_KIND" "$CWD" "$TTY_PATH" "$PROJECT" "$SESSION_ID"
 
 # --- Save session state for the focus script ---
 jq -cn \
@@ -122,22 +122,27 @@ jq -cn \
   }' \
   > "$STATE_DIR/$SESSION_ID.json"
 
-# --- Send notification ---
-# Prefer terminal-notifier (supports click-to-focus), fall back to osascript
-FOCUS_CMD="bash $(shell_quote "$SCRIPT_DIR/cc-focus.sh") $(shell_quote "$SESSION_ID")"
+# --- Write log entry for menubar app ---
+LOG_DIR="$HOME/.cc-notify/log"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/$(date +%s)-${SESSION_ID}.json"
+jq -cn \
+  --arg session_id "$SESSION_ID" \
+  --arg title "$TITLE" \
+  --arg body "$BODY" \
+  --arg project "$PROJECT" \
+  --arg event "$EVENT" \
+  --arg terminal_kind "$TERMINAL_KIND" \
+  --argjson ts "$(date +%s)" \
+  '{session_id:$session_id,title:$title,body:$body,project:$project,event:$event,terminal_kind:$terminal_kind,ts:$ts}' \
+  > "$LOG_FILE"
 
-if command -v terminal-notifier &>/dev/null; then
-  terminal-notifier \
-    -title "$TITLE" \
-    -message "$BODY" \
-    -subtitle "$PROJECT" \
-    -group "cc-$SESSION_ID" \
-    -execute "$FOCUS_CMD" \
-    -sound "$SOUND" \
-    -appIcon "https://claude.ai/favicon.ico" \
-    &>/dev/null &
+# --- Send notification ---
+# For Ghostty: use OSC 9 (native desktop notification via the terminal).
+# For other terminals: use osascript display notification.
+if [ "$TERMINAL_KIND" = "ghostty" ] && [ -n "$TTY_PATH" ] && [ -w "$TTY_PATH" ]; then
+  cc_notify_send_ghostty_notification "$TTY_PATH" "$TITLE: $BODY" &
 else
-  # osascript fallback — no click action, but still notifies
   osascript - "$TITLE" "$BODY" "$PROJECT" "$SOUND" <<'APPLESCRIPT' &
 on run argv
   display notification (item 2 of argv) with title (item 1 of argv) subtitle (item 3 of argv) sound name (item 4 of argv)

@@ -36,6 +36,17 @@ if [ -f "$SETTINGS_FILE" ]; then
   fi
 fi
 
+# --- Stop and remove LaunchAgent ---
+PLIST_FILE="$HOME/Library/LaunchAgents/com.cc-notify.bar.plist"
+if [ -f "$PLIST_FILE" ]; then
+  launchctl bootout gui/$(id -u) "$PLIST_FILE" 2>/dev/null || true
+  rm -f "$PLIST_FILE"
+  info "LaunchAgent removed"
+fi
+
+# --- Kill menubar app if running ---
+pkill -f CCNotifyBar 2>/dev/null || true
+
 # --- Remove installed files ---
 if [ -d "$HOME/.cc-notify" ]; then
   rm -rf "$HOME/.cc-notify"

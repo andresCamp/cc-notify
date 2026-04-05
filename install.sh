@@ -52,6 +52,32 @@ chmod +x "$SCRIPTS_DIR/cc-notify.sh" "$SCRIPTS_DIR/cc-focus.sh" "$SCRIPTS_DIR/cc
 
 info "Scripts installed to $SCRIPTS_DIR"
 
+# --- Build menubar app ---
+APP_SRC="$SOURCE_DIR/app/CCNotifyBar.swift"
+APP_BIN="$INSTALL_DIR/CCNotifyBar"
+
+if [ -f "$APP_SRC" ]; then
+  if command -v swiftc &>/dev/null; then
+    echo "Compiling menubar app..."
+    swiftc -O -o "$APP_BIN" "$APP_SRC" \
+      -framework AppKit \
+      -target arm64-apple-macosx13.0 2>&1 || {
+        warn "Swift compilation failed. Menubar app will not be available."
+        warn "Notifications still work without it."
+        APP_BIN=""
+      }
+    if [ -n "$APP_BIN" ] && [ -f "$APP_BIN" ]; then
+      info "Menubar app compiled"
+    fi
+  else
+    warn "swiftc not found. Menubar app will not be available."
+    warn "Install Xcode Command Line Tools: xcode-select --install"
+    APP_BIN=""
+  fi
+else
+  APP_BIN=""
+fi
+
 # --- Configure Claude Code hooks ---
 SETTINGS_FILE="$HOME/.claude/settings.json"
 
@@ -134,4 +160,38 @@ if ! command -v terminal-notifier &>/dev/null; then
   echo "  brew install terminal-notifier"
   echo ""
 fi
+# --- Install LaunchAgent for menubar app ---
+if [ -n "$APP_BIN" ] && [ -f "$APP_BIN" ]; then
+  PLIST_DIR="$HOME/Library/LaunchAgents"
+  PLIST_FILE="$PLIST_DIR/com.cc-notify.bar.plist"
+  mkdir -p "$PLIST_DIR"
+
+  cat > "$PLIST_FILE" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cc-notify.bar</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$APP_BIN</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <false/>
+</dict>
+</plist>
+PLIST
+
+  # Stop existing instance if running
+  launchctl bootout gui/$(id -u) "$PLIST_FILE" 2>/dev/null || true
+  launchctl bootstrap gui/$(id -u) "$PLIST_FILE" 2>/dev/null || true
+
+  info "Menubar app installed and started (launches on login)"
+  echo ""
+  echo "  Look for the bell icon in your menubar."
+fi
+
 echo "To uninstall: bash $SOURCE_DIR/uninstall.sh"

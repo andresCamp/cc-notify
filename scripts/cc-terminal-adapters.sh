@@ -29,72 +29,80 @@ cc_notify_app_name_for_kind() {
   esac
 }
 
+# Capture terminal-specific identifiers at hook time.
+# For Ghostty: briefly set a unique title marker, query AppleScript to
+# find which terminal has that title, capture its stable ID. The marker
+# is set while CC is blocked waiting for this hook, so there is no race.
 cc_notify_capture_context() {
   local terminal_kind="$1"
   local cwd="$2"
+  local tty="$3"
+  local project="$4"
+  local session_id="$5"
 
   CC_NOTIFY_FOCUS_CAPABILITY="fallback"
   CC_NOTIFY_GHOSTTY_TERMINAL_ID=""
 
   case "$terminal_kind" in
     ghostty)
-      CC_NOTIFY_GHOSTTY_TERMINAL_ID=$(cc_notify_capture_ghostty_terminal_id "$cwd")
+      CC_NOTIFY_GHOSTTY_TERMINAL_ID=$(cc_notify_capture_ghostty_id_via_marker "$tty" "$session_id")
       if [ -n "$CC_NOTIFY_GHOSTTY_TERMINAL_ID" ]; then
         CC_NOTIFY_FOCUS_CAPABILITY="ghostty_terminal_id"
-      elif [ -n "$cwd" ]; then
-        CC_NOTIFY_FOCUS_CAPABILITY="ghostty_cwd"
       fi
       ;;
   esac
 }
 
-cc_notify_capture_ghostty_terminal_id() {
-  local cwd="$1"
-  [ -n "$cwd" ] || return 0
+# Set a temporary title marker on the TTY, query Ghostty for the terminal
+# with that exact title, capture its stable ID.
+cc_notify_capture_ghostty_id_via_marker() {
+  local tty="$1"
+  local session_id="$2"
+  [ -n "$tty" ] && [ -w "$tty" ] || return 0
 
-  osascript - "$cwd" <<'APPLESCRIPT' 2>/dev/null || true
-on normalizePath(pathText)
-  if pathText is missing value then return ""
-  if pathText is "/" then return "/"
-  if pathText ends with "/" then
-    return text 1 thru -2 of pathText
-  end if
-  return pathText
-end normalizePath
+  local marker="cc-notify:${session_id}"
 
+  # Set the marker title directly on the TTY device
+  printf '\033]2;%s\007' "$marker" > "$tty" 2>/dev/null || return 0
+  sleep 0.15
+
+  # Find the terminal with that exact title
+  osascript - "$marker" <<'APPLESCRIPT' 2>/dev/null || true
 on run argv
-  set targetCwd to normalizePath(item 1 of argv)
+  set marker to item 1 of argv
   tell application "Ghostty"
-    set matches to {}
-    repeat with t in every terminal
-      set terminalCwd to normalizePath(working directory of t)
-      if terminalCwd is targetCwd then set end of matches to t
+    repeat with t in terminals
+      if (name of t) is marker then return id of t
     end repeat
-    if (count of matches) is 1 then
-      return id of item 1 of matches
-    end if
   end tell
   return ""
 end run
 APPLESCRIPT
 }
 
+# Send a native Ghostty desktop notification via OSC 9.
+cc_notify_send_ghostty_notification() {
+  local tty="$1"
+  local message="$2"
+  [ -n "$tty" ] && [ -w "$tty" ] || return 1
+  printf '\033]9;%s\007' "$message" > "$tty" 2>/dev/null
+}
+
+# Focus the correct terminal. Uses the captured Ghostty terminal ID
+# to activate the window, select the tab, and focus the terminal.
 cc_notify_focus_context() {
   local state_file="$1"
-  local terminal_kind app tty cwd ghostty_terminal_id
+  local session_id="$2"
+  local terminal_kind app tty ghostty_terminal_id
 
   terminal_kind=$(cc_notify_json_field "$state_file" '.terminal_kind // "unknown"')
   app=$(cc_notify_json_field "$state_file" '.app // ""')
   tty=$(cc_notify_json_field "$state_file" '.tty // ""')
-  cwd=$(cc_notify_json_field "$state_file" '.cwd // ""')
   ghostty_terminal_id=$(cc_notify_json_field "$state_file" '.ghostty_terminal_id // ""')
 
   case "$terminal_kind" in
     ghostty)
       if cc_notify_focus_ghostty_terminal "$ghostty_terminal_id"; then
-        return 0
-      fi
-      if cc_notify_focus_ghostty_cwd "$cwd"; then
         return 0
       fi
       ;;
@@ -103,6 +111,9 @@ cc_notify_focus_context() {
   cc_notify_focus_fallback "$app" "$tty"
 }
 
+# Focus a Ghostty terminal by its stable ID.
+# Walks windows > tabs > terminals to find the containing tab,
+# activates the window, selects the tab, and focuses the terminal.
 cc_notify_focus_ghostty_terminal() {
   local terminal_id="$1"
   [ -n "$terminal_id" ] || return 1
@@ -111,49 +122,24 @@ cc_notify_focus_ghostty_terminal() {
 on run argv
   set targetId to item 1 of argv
   tell application "Ghostty"
-    set matches to every terminal whose id is targetId
-    if (count of matches) > 0 then
-      focus item 1 of matches
-      return "ok"
-    end if
-  end tell
-  return ""
-end run
-APPLESCRIPT
-)" = "ok" ]
-}
-
-cc_notify_focus_ghostty_cwd() {
-  local cwd="$1"
-  [ -n "$cwd" ] || return 1
-
-  [ "$(osascript - "$cwd" <<'APPLESCRIPT' 2>/dev/null || true
-on normalizePath(pathText)
-  if pathText is missing value then return ""
-  if pathText is "/" then return "/"
-  if pathText ends with "/" then
-    return text 1 thru -2 of pathText
-  end if
-  return pathText
-end normalizePath
-
-on run argv
-  set targetCwd to normalizePath(item 1 of argv)
-  tell application "Ghostty"
-    set matches to {}
-    repeat with t in every terminal
-      set terminalCwd to normalizePath(working directory of t)
-      if terminalCwd is targetCwd then set end of matches to t
+    activate
+    repeat with w in windows
+      repeat with tb in tabs of w
+        repeat with t in terminals of tb
+          if (id of t) is targetId then
+            activate window w
+            select tab tb
+            focus t
+            return "ok"
+          end if
+        end repeat
+      end repeat
     end repeat
-    if (count of matches) is 1 then
-      focus item 1 of matches
-      return "ok"
-    end if
   end tell
   return ""
 end run
 APPLESCRIPT
-)" = "ok" ]
+  )" = "ok" ]
 }
 
 cc_notify_focus_fallback() {

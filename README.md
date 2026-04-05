@@ -43,13 +43,14 @@ The adapter uses Ghostty's macOS AppleScript dictionary, which exposes:
 
 Current Ghostty strategy:
 
-1. At hook time, find a unique Ghostty terminal whose working directory matches the Claude hook `cwd`.
-2. If exactly one match exists, store Ghostty's stable terminal ID.
-3. On notification click, focus that exact Ghostty terminal by ID.
-4. If no unique ID was captured, try again by working directory.
-5. If that is still ambiguous, fall back to generic app activation plus TTY bell.
+1. At hook time, write an invisible per-session marker into the Ghostty surface title.
+2. Also try to capture a stable Ghostty terminal ID when `cwd` matching is unique.
+3. On notification click, first look for the invisible title marker and focus that exact Ghostty surface.
+4. If marker-based focus fails, try focusing by the captured Ghostty terminal ID.
+5. If that also fails, try again by working directory.
+6. If all Ghostty-specific strategies fail, fall back to generic app activation plus TTY bell.
 
-This is exact when the working-directory match is unique. It is best-effort when multiple Ghostty surfaces share the same `cwd`.
+The title marker path is the main strategy because it does not depend on `cwd` uniqueness. The `cwd` path remains a weaker fallback.
 
 ### Other Terminals
 
@@ -158,6 +159,7 @@ Typical fields include:
 - `wezterm_pane_id`
 - `kitty_window_id`
 - `ghostty_terminal_id`
+- `ghostty_title_marked`
 - `ts`
 
 ## Notifications
@@ -176,7 +178,7 @@ Current notification mapping:
 ## Limits
 
 - Exact focus is not universal yet.
-- Ghostty exact focus currently depends on unique working-directory matching at capture time.
+- Ghostty exact focus now prefers a per-session title marker, but still falls back when Ghostty scripting is unavailable or when the marker is lost.
 - If multiple sessions share the same terminal app and same `cwd`, fallback behavior may only bring the app forward and ring the correct TTY.
 - `osascript` notifications work without click actions, but click-to-focus requires `terminal-notifier`.
 

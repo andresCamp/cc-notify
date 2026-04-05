@@ -15,6 +15,6 @@ if [ -z "$SESSION_ID" ] || [ ! -f "$STATE_FILE" ]; then
   exit 0
 fi
 
-cc_notify_focus_context "$STATE_FILE"
+cc_notify_focus_context "$STATE_FILE" "$SESSION_ID"
 
 exit 0
