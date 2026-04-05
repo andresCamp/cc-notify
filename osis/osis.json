@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "type": "product",
+  "product": "cc-notify",
+  "productVersion": "v1",
+  "activePhase": null,
+  "lastTwinUpdate": null,
+  "lastDriftScan": null,
+  "files": {
+    "twin": "osis/twin.md",
+    "v1": {
+      "vision": "osis/v1/vision.md",
+      "product-spec": "osis/v1/product-spec.md",
+      "changelog": "osis/v1/changelog.md"
+    }
+  }
+}
